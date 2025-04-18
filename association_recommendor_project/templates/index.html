@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Association Rule Recommender</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #f6f9fc, #e3f2fd);
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 40px auto;
+      background: white;
+      padding: 30px;
+      border-radius: 18px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    }
+
+    h1, h2 {
+      text-align: center;
+      color: #2d2d2d;
+    }
+
+    input[type="file"] {
+      padding: 12px;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+
+    button {
+      background: #ff6f61;
+      color: white;
+      padding: 12px 24px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #e53935;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: center;
+    }
+
+    th {
+      background-color: #3949ab;
+      color: white;
+    }
+
+    tr:nth-child(even) {
+      background-color: #f0f0f0;
+    }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .product-card {
+      background: linear-gradient(135deg, #81ecec, #74b9ff);
+      border-radius: 14px;
+      padding: 18px;
+      text-align: center;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+      cursor: pointer;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .product-card:hover {
+      transform: scale(1.08);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      background: linear-gradient(135deg, #00cec9, #0984e3);
+    }
+
+    @media screen and (max-width: 768px) {
+      .container {
+        margin: 20px;
+        padding: 20px;
+      }
+
+      .product-card {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Upload Transaction CSV</h1>
+  <input type="file" id="csvFile">
+  <br><br>
+  <button onclick="uploadCSV()">Upload</button>
+</div>
+
+<div class="container" id="rulesContainer" style="display:none;">
+  <h1>Generated Rules</h1>
+  <table id="rulesTable">
+    <thead>
+      <tr>
+        <th>If (Antecedents)</th>
+        <th>Then (Consequents)</th>
+        <th>Support</th>
+        <th>Confidence</th>
+        <th>Lift</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="container" id="chartsSection" style="display:none;">
+  <h2>Rule Confidence vs Lift (Top 10)</h2>
+  <div id="barChart" style="height: 500px;"></div>
+</div>
+
+<div class="container">
+  <h2>Available Products</h2>
+  <div id="productGrid" class="product-grid"></div>
+</div>
+
+<div class="container" id="recommendationSection" style="display:none;">
+  <h2>Recommended Products</h2>
+  <div id="recommendationGrid" class="product-grid"></div>
+</div>
+
+<script>
+  const products = ["Milk", "Bread", "Butter", "Eggs", "Cheese", "Jam", "Coffee", "Tea", "Cookies", "Juice"];
+
+  function loadProducts() {
+    const grid = document.getElementById("productGrid");
+    grid.innerHTML = '';
+    products.forEach(product => {
+      const card = document.createElement("div");
+      card.className = "product-card";
+      card.innerText = product;
+      card.onclick = () => getRecommendations(product);
+      grid.appendChild(card);
+    });
+  }
+
+  function uploadCSV() {
+    const fileInput = document.getElementById('csvFile');
+    const file = fileInput.files[0];
+    if (!file) return alert("Please select a CSV file before uploading.");
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    axios.post('/upload', formData).then(response => {
+      const data = response.data;
+      const tbody = document.querySelector("#rulesTable tbody");
+      tbody.innerHTML = '';
+
+      if (!Array.isArray(data) || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5">No rules generated.</td></tr>';
+      } else {
+        data.forEach(rule => {
+          const antecedents = rule.antecedents.join(", ");
+          const consequents = rule.consequents.join(", ");
+          tbody.innerHTML += `<tr>
+            <td>${antecedents}</td>
+            <td>${consequents}</td>
+            <td>${rule.support.toFixed(2)}</td>
+            <td>${rule.confidence.toFixed(2)}</td>
+            <td>${rule.lift.toFixed(2)}</td>
+          </tr>`;
+        });
+      }
+
+      document.getElementById('rulesContainer').style.display = 'block';
+
+      const topRules = data.slice(0, 10);
+      const x = topRules.map(r => `${r.antecedents.join(", ")} ➝ ${r.consequents.join(", ")}`);
+      const confidence = topRules.map(r => r.confidence);
+      const lift = topRules.map(r => r.lift);
+
+      Plotly.newPlot('barChart', [
+        { x, y: confidence, name: 'Confidence', type: 'bar' },
+        { x, y: lift, name: 'Lift', type: 'bar' }
+      ], {
+        barmode: 'group',
+        title: 'Top Association Rules',
+        xaxis: { title: 'Rules' },
+        yaxis: { title: 'Metrics' }
+      });
+
+      document.getElementById('chartsSection').style.display = 'block';
+    }).catch(err => {
+      console.error("CSV upload failed:", err);
+      alert("Upload failed: " + (err.response?.data?.error || err.message));
+    });
+  }
+
+  function getRecommendations(product) {
+    axios.post('/recommend', { product }).then(res => {
+      const container = document.getElementById("recommendationGrid");
+      container.innerHTML = '';
+
+      if (res.data.recommendations && res.data.recommendations.length > 0) {
+        res.data.recommendations.forEach(item => {
+          const card = document.createElement("div");
+          card.className = "product-card";
+          card.innerText = item;
+          container.appendChild(card);
+        });
+        document.getElementById("recommendationSection").style.display = 'block';
+      } else {
+        alert(`No recommendations found for "${product}".`);
+      }
+    }).catch((error) => {
+      console.error("Error fetching recommendations:", error);
+      alert("Error fetching recommendations");
+    });
+  }
+
+  window.onload = loadProducts;
+</script>
+
+</body>
+</html>
+
